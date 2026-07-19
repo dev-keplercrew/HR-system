@@ -1,0 +1,457 @@
+// HRIS data model — covers all 9 RFP modules.
+// NOTE: SQLite (Prisma) does not support native enums, so enumerated fields are
+// String with allowed values documented in comments. Schema is written to be
+// Postgres-portable (swap provider + convert the documented String enums to enum).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Security & Governance
+// ---------------------------------------------------------------------------
+
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
+  passwordHash String
+  role         String    @default("employee") // admin | hr | manager | employee
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  employee     Employee?
+  auditLogs    AuditLog[]
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  detail    String?
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Employee Database
+// ---------------------------------------------------------------------------
+
+model Department {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  code      String     @unique
+  employees Employee[]
+}
+
+model Employee {
+  id             Int      @id @default(autoincrement())
+  employeeNo     String   @unique
+  firstName      String
+  lastName       String
+  email          String   @unique
+  phone          String?
+  dateOfBirth    DateTime?
+  gender         String?  // male | female | other
+  maritalStatus  String?  // single | married | divorced | widowed
+  nationality    String?
+  nric           String?  // masked national ID (e.g. S****123A)
+  address        String?
+  jobTitle       String?
+  employmentType String   @default("full-time") // full-time | part-time | contract | intern
+  payrollGroup   String   @default("general")   // general | executive | management | hourly
+  status         String   @default("active")    // active | probation | on-leave | resigned | terminated
+  joinDate       DateTime @default(now())
+  confirmationDate DateTime?
+  probationEndDate DateTime?
+  contractEndDate  DateTime?
+  workPassType     String?  // citizen | pr | ep | sp | wp
+  workPassExpiry   DateTime?
+  basicSalary      Float    @default(0)
+  bankName         String?
+  bankAccount      String?
+  photoUrl         String?
+
+  departmentId  Int?
+  department    Department? @relation(fields: [departmentId], references: [id])
+  managerId     Int?
+  manager       Employee?   @relation("EmployeeManager", fields: [managerId], references: [id])
+  reports       Employee[]  @relation("EmployeeManager")
+  userId        Int?        @unique
+  user          User?       @relation(fields: [userId], references: [id])
+
+  employmentHistory EmploymentHistory[]
+  documents         Document[]
+  emergencyContacts EmergencyContact[]
+  qualifications    Qualification[]
+  payslips          Payslip[]
+  leaveRequests     LeaveRequest[]
+  leaveBalances     LeaveBalance[]
+  claims            Claim[]
+  alerts            Alert[]
+  reviews           PerformanceReview[]
+  goals             Goal[]
+  onboardingTasks   OnboardingTask[]
+  offboardingTasks  OffboardingTask[]
+  assets            Asset[]
+  trainingRecords   TrainingRecord[]
+  certifications    Certification[]
+  shifts            Shift[]
+  attendance        AttendanceRecord[]
+  overtimeRequests  OvertimeRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EmploymentHistory {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title      String
+  department String?
+  startDate  DateTime
+  endDate    DateTime?
+  note       String?
+}
+
+model Document {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  name       String
+  category   String   @default("general") // contract | id | certificate | payslip | general
+  filePath   String   // metadata only — placeholder path (file storage out of scope)
+  uploadedAt DateTime @default(now())
+}
+
+model EmergencyContact {
+  id           Int      @id @default(autoincrement())
+  employeeId   Int
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  name         String
+  relationship String
+  phone        String
+  email        String?
+}
+
+model Qualification {
+  id           Int      @id @default(autoincrement())
+  employeeId   Int
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title        String
+  institution  String?
+  type         String   @default("qualification") // qualification | certification
+  obtainedDate DateTime?
+  expiryDate   DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// Payroll (CPF / IRAS / GIRO)
+// ---------------------------------------------------------------------------
+
+model PayrollRun {
+  id           Int       @id @default(autoincrement())
+  period       String    // e.g. "2025-07"
+  payrollGroup String    @default("general")
+  status       String    @default("draft") // draft | finalised
+  runDate      DateTime  @default(now())
+  totalGross   Float     @default(0)
+  totalNet     Float     @default(0)
+  totalCpf     Float     @default(0)
+  payslips     Payslip[]
+}
+
+model Payslip {
+  id            Int        @id @default(autoincrement())
+  payrollRunId  Int
+  payrollRun    PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employeeId    Int
+  employee      Employee   @relation(fields: [employeeId], references: [id])
+  basicPay      Float      @default(0)
+  allowances    Float      @default(0)
+  grossPay      Float      @default(0)
+  employeeCpf   Float      @default(0)
+  employerCpf   Float      @default(0)
+  netPay        Float      @default(0)
+  createdAt     DateTime   @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Leave Management
+// ---------------------------------------------------------------------------
+
+model LeaveType {
+  id             Int            @id @default(autoincrement())
+  name           String         @unique
+  code           String         @unique
+  annualQuota    Float          @default(0)
+  paid           Boolean        @default(true)
+  requests       LeaveRequest[]
+  balances       LeaveBalance[]
+}
+
+model LeaveRequest {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId Int
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  startDate   DateTime
+  endDate     DateTime
+  days        Float
+  reason      String?
+  status      String    @default("pending") // pending | approved | rejected | cancelled
+  approverId  Int?
+  decidedAt   DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model LeaveBalance {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId Int
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year        Int
+  entitled    Float     @default(0)
+  taken       Float     @default(0)
+  pending     Float     @default(0)
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+// ---------------------------------------------------------------------------
+// Claims & Benefits
+// ---------------------------------------------------------------------------
+
+model ClaimType {
+  id        Int     @id @default(autoincrement())
+  name      String  @unique
+  code      String  @unique
+  annualCap Float   @default(0)
+  claims    Claim[]
+}
+
+model Claim {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  claimTypeId Int
+  claimType   ClaimType @relation(fields: [claimTypeId], references: [id])
+  amount      Float
+  claimDate   DateTime  @default(now())
+  description String?
+  receiptPath String?
+  status      String    @default("pending") // pending | approved | rejected | paid
+  approverId  Int?
+  decidedAt   DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Workflow Automation (alerts)
+// ---------------------------------------------------------------------------
+
+model Alert {
+  id         Int      @id @default(autoincrement())
+  employeeId Int?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type       String   // probation | contract-expiry | workpass-expiry | cert-renewal
+  severity   String   @default("info") // info | warning | critical
+  title      String
+  message    String
+  dueDate    DateTime?
+  targetRole String   @default("hr") // which role should see it: hr | manager | admin
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model SavedReport {
+  id         Int      @id @default(autoincrement())
+  name       String
+  source     String   // employees | payroll | leave | claims
+  fields     String   // JSON array of field keys
+  filters    String?  // JSON object of filters
+  createdAt  DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Performance Management
+// ---------------------------------------------------------------------------
+
+model PerformanceReview {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  cycle       String    // e.g. "2025"
+  stage       String    @default("confirmation") // confirmation | mid-year | year-end
+  rating      Int?      // 1..5
+  comments    String?
+  status      String    @default("draft") // draft | submitted | finalised
+  reviewerId  Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Goal {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  cycle       String
+  title       String
+  description String?
+  weight      Int       @default(0)
+  progress    Int       @default(0) // 0..100
+  status      String    @default("active") // active | achieved | missed
+  createdAt   DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Employee Lifecycle (onboarding / offboarding)
+// ---------------------------------------------------------------------------
+
+model OnboardingTask {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title       String
+  department  String    // IT | HR | Hiring Manager | Facilities
+  dueDate     DateTime?
+  status      String    @default("pending") // pending | in-progress | done
+  createdAt   DateTime  @default(now())
+}
+
+model OffboardingTask {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title       String
+  department  String
+  dueDate     DateTime?
+  status      String    @default("pending") // pending | in-progress | done
+  createdAt   DateTime  @default(now())
+}
+
+model Asset {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int?
+  employee    Employee? @relation(fields: [employeeId], references: [id])
+  tag         String    @unique
+  name        String
+  category    String    @default("hardware") // hardware | access-card | phone | other
+  status      String    @default("available") // available | issued | returned | retired
+  issuedDate  DateTime?
+  returnedDate DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// Recruitment
+// ---------------------------------------------------------------------------
+
+model Requisition {
+  id          Int         @id @default(autoincrement())
+  title       String
+  department  String
+  headcount   Int         @default(1)
+  status      String      @default("draft") // draft | approved | posted | closed
+  justification String?
+  approverId  Int?
+  createdAt   DateTime    @default(now())
+  candidates  Candidate[]
+}
+
+model Candidate {
+  id            Int         @id @default(autoincrement())
+  requisitionId Int?
+  requisition   Requisition? @relation(fields: [requisitionId], references: [id])
+  name          String
+  email         String
+  phone         String?
+  source        String?     // referral | jobboard | agency | direct
+  stage         String      @default("applied") // applied | screening | interview | offer | hired | rejected
+  createdAt     DateTime    @default(now())
+  interviews    Interview[]
+}
+
+model Interview {
+  id           Int       @id @default(autoincrement())
+  candidateId  Int
+  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  round        Int       @default(1)
+  scheduledAt  DateTime?
+  interviewer  String?
+  score        Int?      // 1..5
+  feedback     String?
+  status       String    @default("scheduled") // scheduled | completed | cancelled
+}
+
+// ---------------------------------------------------------------------------
+// Learning / Training
+// ---------------------------------------------------------------------------
+
+model TrainingRecord {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  courseName  String
+  provider    String?
+  completedAt DateTime?
+  hours       Float     @default(0)
+  status      String    @default("enrolled") // enrolled | in-progress | completed
+}
+
+model Certification {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  name        String
+  authority   String?   // e.g. SFA
+  issuedDate  DateTime?
+  expiryDate  DateTime?
+  mandatory   Boolean   @default(false)
+}
+
+// ---------------------------------------------------------------------------
+// Time & Attendance
+// ---------------------------------------------------------------------------
+
+model Shift {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        DateTime
+  startTime   String    // "09:00"
+  endTime     String    // "18:00"
+  location    String?
+  createdAt   DateTime  @default(now())
+}
+
+model AttendanceRecord {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        DateTime
+  clockIn     DateTime?
+  clockOut    DateTime?
+  scheduledHours Float  @default(8)
+  workedHours    Float  @default(0)
+  overtimeHours  Float  @default(0)
+}
+
+model OvertimeRequest {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date        DateTime
+  hours       Float
+  reason      String?
+  status      String    @default("pending") // pending | approved | rejected
+  approverId  Int?
+  createdAt   DateTime  @default(now())
+}

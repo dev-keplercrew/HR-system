@@ -1,0 +1,22 @@
+{
+  "name": "hris-suite",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HR Information System (HRIS) — full-stack HR suite for a Singapore-based organisation (~350 headcount)",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "install:all": "npm install --workspaces --include-workspace-root",
+    "db:setup": "npm run db:setup --workspace backend",
+    "seed": "npm run seed --workspace backend",
+    "dev": "concurrently -n backend,frontend -c cyan,magenta \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "test": "npm run test --workspace backend && npm run test --workspace frontend",
+    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

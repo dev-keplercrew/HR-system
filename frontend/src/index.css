@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display tracking-tight;
+  }
+  /* Statutory / monetary figures render in tabular mono — the app's signature. */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+  *:focus-visible {
+    outline: 2px solid #0e7c7b;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  /* --- Buttons --- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-teal text-white hover:bg-teal-dark;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-surface text-ink-soft hover:bg-canvas;
+  }
+  .btn-danger {
+    @apply btn bg-bad text-white hover:opacity-90;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* --- Cards --- */
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-card;
+  }
+  .card-pad {
+    @apply card p-5;
+  }
+
+  /* --- Inputs --- */
+  .field-label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-ink-muted;
+  }
+  .input,
+  .select,
+  .textarea {
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink shadow-sm transition placeholder:text-ink-muted/60 focus:border-teal focus:ring-2 focus:ring-teal/20;
+  }
+
+  /* --- Badges --- */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .badge-neutral {
+    @apply badge bg-canvas text-ink-muted ring-1 ring-line;
+  }
+  .badge-teal {
+    @apply badge bg-teal-soft text-teal-dark;
+  }
+  .badge-good {
+    @apply badge bg-good/10 text-good;
+  }
+  .badge-warn {
+    @apply badge bg-amber-soft text-warn;
+  }
+  .badge-bad {
+    @apply badge bg-bad/10 text-bad;
+  }
+
+  /* --- Tables --- */
+  .table {
+    @apply w-full text-left text-sm;
+  }
+  .table thead th {
+    @apply border-b border-line px-4 py-3 text-xs font-semibold uppercase tracking-wide text-ink-muted;
+  }
+  .table tbody td {
+    @apply border-b border-line/70 px-4 py-3 text-ink-soft;
+  }
+  .table tbody tr:hover {
+    @apply bg-canvas/70;
+  }
+
+  /* --- Nav --- */
+  .nav-item {
+    @apply flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-white/5 hover:text-white;
+  }
+  .nav-item-active {
+    @apply bg-white/10 text-white;
+  }
+}

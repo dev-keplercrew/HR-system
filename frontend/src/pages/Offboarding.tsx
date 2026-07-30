@@ -82,6 +82,7 @@ export default function Offboarding() {
   const [startError, setStartError] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [assetError, setAssetError] = useState<string | null>(null);
+  const [ir21, setIr21] = useState<Record<number, { loading: boolean; error: string | null; note: string | null }>>({});
 
   async function startOffboarding() {
     if (!pickEmp) return;
@@ -115,6 +116,25 @@ export default function Offboarding() {
       assets.reload();
     } catch (err: any) {
       setAssetError(err?.message ?? "Failed to return asset");
+    }
+  }
+
+  // Item 4 — IRAS IR21 tax clearance for a departing foreign (EP/SP/WP)
+  // employee. The backend is the source of truth on applicability (400 for a
+  // citizen/PR); this just surfaces the action and shows the result/error.
+  async function generateIr21(employeeId: number) {
+    setIr21((prev) => ({ ...prev, [employeeId]: { loading: true, error: null, note: null } }));
+    try {
+      const res = await api.post(`/lifecycle/offboarding/${employeeId}/ir21`);
+      setIr21((prev) => ({
+        ...prev,
+        [employeeId]: { loading: false, error: null, note: `IR21 tax clearance generated for ${res.clearanceDate}.` },
+      }));
+    } catch (err: any) {
+      setIr21((prev) => ({
+        ...prev,
+        [employeeId]: { loading: false, error: err?.message ?? "Failed to generate IR21", note: null },
+      }));
     }
   }
 
@@ -246,7 +266,14 @@ export default function Offboarding() {
             return (
               <div className="grid gap-6 lg:grid-cols-2">
                 {byEmployee.map((group) => (
-                  <ChecklistCard key={group.employeeId} group={group} onStatus={changeStatus} />
+                  <ChecklistCard
+                    key={group.employeeId}
+                    group={group}
+                    onStatus={changeStatus}
+                    isHR={isHR}
+                    ir21={ir21[group.employeeId]}
+                    onGenerateIr21={generateIr21}
+                  />
                 ))}
               </div>
             );
@@ -298,7 +325,19 @@ function groupByEmployee(tasks: Task[]): Group[] {
   return [...map.values()];
 }
 
-function ChecklistCard({ group, onStatus }: { group: Group; onStatus: (id: number, status: string) => void }) {
+function ChecklistCard({
+  group,
+  onStatus,
+  isHR,
+  ir21,
+  onGenerateIr21,
+}: {
+  group: Group;
+  onStatus: (id: number, status: string) => void;
+  isHR: boolean;
+  ir21?: { loading: boolean; error: string | null; note: string | null };
+  onGenerateIr21: (employeeId: number) => void;
+}) {
   const done = group.tasks.filter((t) => t.status === "done").length;
   const total = group.tasks.length;
   const pct = total ? Math.round((done / total) * 100) : 0;
@@ -334,6 +373,15 @@ function ChecklistCard({ group, onStatus }: { group: Group; onStatus: (id: numbe
             />
           </div>
         </div>
+        {isHR && (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <Button variant="ghost" size="sm" disabled={ir21?.loading} onClick={() => onGenerateIr21(group.employeeId)}>
+              {ir21?.loading ? "Generating…" : "Generate IR21 tax clearance"}
+            </Button>
+          </div>
+        )}
+        {ir21?.note && <p className="mt-2 text-xs font-medium text-good">{ir21.note}</p>}
+        {ir21?.error && <p className="mt-2 text-xs font-medium text-bad">{ir21.error}</p>}
       </div>
       <ul className="divide-y divide-line">
         {group.tasks.map((t) => (

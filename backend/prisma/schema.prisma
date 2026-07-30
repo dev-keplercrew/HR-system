@@ -17,12 +17,12 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           Int       @id @default(autoincrement())
-  email        String    @unique
+  id           Int        @id @default(autoincrement())
+  email        String     @unique
   passwordHash String
-  role         String    @default("employee") // admin | hr | manager | employee
-  active       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
+  role         String     @default("employee") // admin | hr | manager | employee
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
   employee     Employee?
   auditLogs    AuditLog[]
 }
@@ -50,40 +50,41 @@ model Department {
 }
 
 model Employee {
-  id             Int      @id @default(autoincrement())
-  employeeNo     String   @unique
-  firstName      String
-  lastName       String
-  email          String   @unique
-  phone          String?
-  dateOfBirth    DateTime?
-  gender         String?  // male | female | other
-  maritalStatus  String?  // single | married | divorced | widowed
-  nationality    String?
-  nric           String?  // masked national ID (e.g. S****123A)
-  address        String?
-  jobTitle       String?
-  employmentType String   @default("full-time") // full-time | part-time | contract | intern
-  payrollGroup   String   @default("general")   // general | executive | management | hourly
-  status         String   @default("active")    // active | probation | on-leave | resigned | terminated
-  joinDate       DateTime @default(now())
+  id               Int       @id @default(autoincrement())
+  employeeNo       String    @unique
+  firstName        String
+  lastName         String
+  email            String    @unique
+  phone            String?
+  dateOfBirth      DateTime?
+  gender           String? // male | female | other
+  maritalStatus    String? // single | married | divorced | widowed
+  nationality      String?
+  nric             String? // masked national ID (e.g. S****123A)
+  ethnicGroup      String? // self-help fund selector: CDAC | MBMF | SINDA | ECF | null (opt-out)
+  address          String?
+  jobTitle         String?
+  employmentType   String    @default("full-time") // full-time | part-time | contract | intern
+  payrollGroup     String    @default("general") // general | executive | management | hourly
+  status           String    @default("active") // active | probation | on-leave | resigned | terminated
+  joinDate         DateTime  @default(now())
   confirmationDate DateTime?
   probationEndDate DateTime?
   contractEndDate  DateTime?
-  workPassType     String?  // citizen | pr | ep | sp | wp
+  workPassType     String? // citizen | pr | ep | sp | wp
   workPassExpiry   DateTime?
-  basicSalary      Float    @default(0)
+  basicSalary      Float     @default(0)
   bankName         String?
   bankAccount      String?
   photoUrl         String?
 
-  departmentId  Int?
-  department    Department? @relation(fields: [departmentId], references: [id])
-  managerId     Int?
-  manager       Employee?   @relation("EmployeeManager", fields: [managerId], references: [id])
-  reports       Employee[]  @relation("EmployeeManager")
-  userId        Int?        @unique
-  user          User?       @relation(fields: [userId], references: [id])
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  managerId    Int?
+  manager      Employee?   @relation("EmployeeManager", fields: [managerId], references: [id])
+  reports      Employee[]  @relation("EmployeeManager")
+  userId       Int?        @unique
+  user         User?       @relation(fields: [userId], references: [id])
 
   employmentHistory EmploymentHistory[]
   documents         Document[]
@@ -104,15 +105,16 @@ model Employee {
   shifts            Shift[]
   attendance        AttendanceRecord[]
   overtimeRequests  OvertimeRequest[]
+  ytdCpfWages       YtdCpfWage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model EmploymentHistory {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   employeeId Int
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   title      String
   department String?
   startDate  DateTime
@@ -126,7 +128,7 @@ model Document {
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   name       String
   category   String   @default("general") // contract | id | certificate | payslip | general
-  filePath   String   // metadata only — placeholder path (file storage out of scope)
+  filePath   String // metadata only — placeholder path (file storage out of scope)
   uploadedAt DateTime @default(now())
 }
 
@@ -141,12 +143,12 @@ model EmergencyContact {
 }
 
 model Qualification {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   employeeId   Int
-  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee     Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   title        String
   institution  String?
-  type         String   @default("qualification") // qualification | certification
+  type         String    @default("qualification") // qualification | certification
   obtainedDate DateTime?
   expiryDate   DateTime?
 }
@@ -156,30 +158,184 @@ model Qualification {
 // ---------------------------------------------------------------------------
 
 model PayrollRun {
-  id           Int       @id @default(autoincrement())
-  period       String    // e.g. "2025-07"
-  payrollGroup String    @default("general")
-  status       String    @default("draft") // draft | finalised
-  runDate      DateTime  @default(now())
-  totalGross   Float     @default(0)
-  totalNet     Float     @default(0)
-  totalCpf     Float     @default(0)
-  payslips     Payslip[]
+  id             Int             @id @default(autoincrement())
+  period         String // e.g. "2025-07"
+  payrollGroup   String          @default("general")
+  status         String          @default("draft") // draft | reviewed | approved | finalised | voided
+  runDate        DateTime        @default(now())
+  totalGross     Float           @default(0)
+  totalNet       Float           @default(0)
+  totalCpf       Float           @default(0)
+  bankFormat     String? // per-run GIRO bank adapter key (dbs|ocbc|uob|generic); null = admin default
+  // DB-level duplicate-run guard: set to "<period>|<payrollGroup>" while the run
+  // is non-voided, cleared to null on rollback. SQLite (like most DBs) allows
+  // multiple NULLs through a UNIQUE index, so voided runs never collide, but two
+  // concurrent creates for the same period+group race for the SAME non-null key
+  // and the DB itself rejects the second insert — closing the TOCTOU window that
+  // an application-level findFirst-then-create check alone cannot close.
+  dedupeKey      String?         @unique
+  reviewedAt     DateTime?
+  approvedAt     DateTime?
+  finalisedAt    DateTime?
+  voidedAt       DateTime?
+  voidReason     String?
+  payslips       Payslip[]
+  bankStatements BankStatement[]
 }
 
 model Payslip {
-  id            Int        @id @default(autoincrement())
-  payrollRunId  Int
-  payrollRun    PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
-  employeeId    Int
-  employee      Employee   @relation(fields: [employeeId], references: [id])
-  basicPay      Float      @default(0)
-  allowances    Float      @default(0)
-  grossPay      Float      @default(0)
-  employeeCpf   Float      @default(0)
-  employerCpf   Float      @default(0)
-  netPay        Float      @default(0)
-  createdAt     DateTime   @default(now())
+  id                     Int                 @id @default(autoincrement())
+  payrollRunId           Int
+  payrollRun             PayrollRun          @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employeeId             Int
+  employee               Employee            @relation(fields: [employeeId], references: [id])
+  basicPay               Float               @default(0)
+  allowances             Float               @default(0)
+  allowanceBreakdown     String? // JSON array: [{"label":"Transport","amount":30}] — itemised allowance lines (MOM item 3); null falls back to a single "Allowances" line
+  grossPay               Float               @default(0)
+  employeeCpf            Float               @default(0)
+  employerCpf            Float               @default(0)
+  netPay                 Float               @default(0)
+  // Item 1 — OW/AW split
+  ordinaryWage           Float               @default(0)
+  additionalWage         Float               @default(0)
+  owSubjectToCpf         Float               @default(0) // OW actually credited to YtdCpfWage at run time — rollback reverses exactly this
+  owCpf                  Float               @default(0)
+  awCpf                  Float               @default(0)
+  cpfAgeBandLabel        String? // e.g. "<=55", "56-60"
+  // Item 2 — statutory levies
+  sdlAmount              Float               @default(0) // Skills Development Levy (employer-side)
+  fwlAmount              Float               @default(0) // Foreign Worker Levy (employer-side)
+  selfHelpFundDeductions String? // JSON string: {"CDAC":1.5} — employee self-help fund contributions
+  // Item 7 — engine hardening
+  otHours                Float               @default(0)
+  otPay                  Float               @default(0)
+  unpaidLeaveDays        Float               @default(0)
+  unpaidLeaveDeduction   Float               @default(0)
+  backpayAmount          Float               @default(0)
+  adjustments            PayslipAdjustment[]
+  createdAt              DateTime            @default(now())
+}
+
+// Item 1 — per-employee, per-calendar-year Ordinary Wage subject to CPF, used to
+// compute the Additional Wage ceiling (annual AW cap − YTD OW subject to CPF).
+model YtdCpfWage {
+  id                  Int      @id @default(autoincrement())
+  employeeId          Int
+  employee            Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  year                Int
+  totalOwSubjectToCpf Float    @default(0)
+  updatedAt           DateTime @updatedAt
+
+  @@unique([employeeId, year])
+}
+
+// Admin-editable statutory configuration (singleton). Every rate/ceiling that the
+// business logic uses is read from HERE, so a 2026 rate revision is a data change.
+model StatutoryConfig {
+  id                Int      @id @default(autoincrement())
+  cpfOwCeiling      Float    @default(7400)
+  awCeilingAnnual   Float    @default(102000)
+  sdlRate           Float    @default(0.0025) // 0.25%
+  sdlWageCap        Float    @default(4500)
+  sdlMinAmount      Float    @default(2)
+  sdlMaxAmount      Float    @default(11.25)
+  employerCsn       String   @default("123456789A-PTE-01") // CPF EZPay Client Submission Number (placeholder)
+  defaultBankFormat String   @default("generic")
+  otCapHoursPerMonth Float   @default(72) // Item 7 — statutory overtime hours cap
+  otMultiplier      Float    @default(1.5) // Item 7 — overtime pay multiplier on hourly basic rate
+  workingDaysPerMonth  Float @default(22) // Item 7 — proration denominator for mid-month joiners/leavers
+  workingHoursPerMonth Float @default(176) // Item 7 — OT hourly-rate base (workingDaysPerMonth × 8h by default)
+  updatedAt         DateTime @updatedAt
+}
+
+// Item 3 — itemised allowance components (e.g. Transport, Meal), each a
+// percentage of prorated basic pay. Admin-editable so the payslip shows named
+// allowance lines instead of one synthetic figure. Empty table falls back to a
+// single legacy 10%-of-basic "Allowance" line (see payrollCalc.allowanceBreakdown).
+model AllowanceComponent {
+  id                Int    @id @default(autoincrement())
+  label             String
+  percentageOfBasic Float  @default(0) // fraction of prorated basic pay, e.g. 0.06 = 6%
+  sortOrder         Int    @default(0)
+}
+
+// Item 2 — self-help group fund contribution bands (CDAC/MBMF/SINDA/ECF), keyed
+// by ethnic-group selector and banded by gross wage.
+model SelfHelpFundRate {
+  id          Int    @id @default(autoincrement())
+  ethnicGroup String // CDAC | MBMF | SINDA | ECF
+  wageLower   Float  @default(0) // inclusive lower gross-wage bound
+  wageUpper   Float  @default(0) // inclusive upper gross-wage bound (0 = no upper bound)
+  amount      Float  @default(0) // monthly employee contribution for the band
+
+  @@index([ethnicGroup])
+}
+
+// Item 2 — Foreign Worker Levy rate per work-pass type / tier (admin-editable).
+model FwlRateConfig {
+  id           Int    @id @default(autoincrement())
+  workPassType String // sp | wp
+  tier         String @default("basic")
+  monthlyRate  Float  @default(0)
+
+  @@unique([workPassType, tier])
+}
+
+// CPF age-banded employee/employer contribution rate table (admin-editable), so
+// the annual CPF rate revision is a data change, not a code deploy. Rows are
+// ordered by sortOrder ascending; the last row (ageUpper = null) is the
+// no-upper-bound band. Seeded with the published 2025 default bands.
+model CpfRateBand {
+  id           Int    @id @default(autoincrement())
+  ageUpper     Int? // inclusive upper age bound; null = highest band (no upper bound)
+  employeeRate Float  @default(0) // fraction of ordinary wage
+  employerRate Float  @default(0)
+  label        String // e.g. "<=55", "56-60", ">70" — surfaced on the payslip
+  sortOrder    Int    @default(0)
+
+  @@index([sortOrder])
+}
+
+// Item 6 — selectable GIRO bank adapter formats.
+model BankFormatConfig {
+  id        Int     @id @default(autoincrement())
+  bankKey   String  @unique // generic | dbs | ocbc | uob
+  label     String
+  isDefault Boolean @default(false)
+}
+
+// Item 6 — uploaded bank statement + reconciliation lines.
+model BankStatement {
+  id           Int                 @id @default(autoincrement())
+  payrollRunId Int?
+  payrollRun   PayrollRun?         @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  filename     String?
+  uploadedAt   DateTime            @default(now())
+  lines        BankStatementLine[]
+}
+
+model BankStatementLine {
+  id                Int           @id @default(autoincrement())
+  bankStatementId   Int
+  bankStatement     BankStatement @relation(fields: [bankStatementId], references: [id], onDelete: Cascade)
+  rawLine           String
+  amount            Float         @default(0)
+  reference         String?
+  matchedEmployeeId Int?
+  matchedAmount     Float?
+  status            String        @default("unmatched") // matched | unmatched | amount-mismatch
+}
+
+// Item 7 — ad-hoc / backpay adjustment lines on a payslip.
+model PayslipAdjustment {
+  id        Int      @id @default(autoincrement())
+  payslipId Int
+  payslip   Payslip  @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  type      String // backpay | adhoc
+  amount    Float    @default(0)
+  note      String?
+  createdAt DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------
@@ -187,13 +343,13 @@ model Payslip {
 // ---------------------------------------------------------------------------
 
 model LeaveType {
-  id             Int            @id @default(autoincrement())
-  name           String         @unique
-  code           String         @unique
-  annualQuota    Float          @default(0)
-  paid           Boolean        @default(true)
-  requests       LeaveRequest[]
-  balances       LeaveBalance[]
+  id          Int            @id @default(autoincrement())
+  name        String         @unique
+  code        String         @unique
+  annualQuota Float          @default(0)
+  paid        Boolean        @default(true)
+  requests    LeaveRequest[]
+  balances    LeaveBalance[]
 }
 
 model LeaveRequest {
@@ -259,26 +415,26 @@ model Claim {
 // ---------------------------------------------------------------------------
 
 model Alert {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   employeeId Int?
   employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  type       String   // probation | contract-expiry | workpass-expiry | cert-renewal
-  severity   String   @default("info") // info | warning | critical
+  type       String // probation | contract-expiry | workpass-expiry | cert-renewal
+  severity   String    @default("info") // info | warning | critical
   title      String
   message    String
   dueDate    DateTime?
-  targetRole String   @default("hr") // which role should see it: hr | manager | admin
-  read       Boolean  @default(false)
-  createdAt  DateTime @default(now())
+  targetRole String    @default("hr") // which role should see it: hr | manager | admin
+  read       Boolean   @default(false)
+  createdAt  DateTime  @default(now())
 }
 
 model SavedReport {
-  id         Int      @id @default(autoincrement())
-  name       String
-  source     String   // employees | payroll | leave | claims
-  fields     String   // JSON array of field keys
-  filters    String?  // JSON object of filters
-  createdAt  DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  name      String
+  source    String // employees | payroll | leave | claims
+  fields    String // JSON array of field keys
+  filters   String? // JSON object of filters
+  createdAt DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------
@@ -286,30 +442,30 @@ model SavedReport {
 // ---------------------------------------------------------------------------
 
 model PerformanceReview {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  cycle       String    // e.g. "2025"
-  stage       String    @default("confirmation") // confirmation | mid-year | year-end
-  rating      Int?      // 1..5
-  comments    String?
-  status      String    @default("draft") // draft | submitted | finalised
-  reviewerId  Int?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  cycle      String // e.g. "2025"
+  stage      String   @default("confirmation") // confirmation | mid-year | year-end
+  rating     Int? // 1..5
+  comments   String?
+  status     String   @default("draft") // draft | submitted | finalised
+  reviewerId Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Goal {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   cycle       String
   title       String
   description String?
-  weight      Int       @default(0)
-  progress    Int       @default(0) // 0..100
-  status      String    @default("active") // active | achieved | missed
-  createdAt   DateTime  @default(now())
+  weight      Int      @default(0)
+  progress    Int      @default(0) // 0..100
+  status      String   @default("active") // active | achieved | missed
+  createdAt   DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------
@@ -317,36 +473,36 @@ model Goal {
 // ---------------------------------------------------------------------------
 
 model OnboardingTask {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  title       String
-  department  String    // IT | HR | Hiring Manager | Facilities
-  dueDate     DateTime?
-  status      String    @default("pending") // pending | in-progress | done
-  createdAt   DateTime  @default(now())
+  id         Int       @id @default(autoincrement())
+  employeeId Int
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title      String
+  department String // IT | HR | Hiring Manager | Facilities
+  dueDate    DateTime?
+  status     String    @default("pending") // pending | in-progress | done
+  createdAt  DateTime  @default(now())
 }
 
 model OffboardingTask {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  title       String
-  department  String
-  dueDate     DateTime?
-  status      String    @default("pending") // pending | in-progress | done
-  createdAt   DateTime  @default(now())
+  id         Int       @id @default(autoincrement())
+  employeeId Int
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  title      String
+  department String
+  dueDate    DateTime?
+  status     String    @default("pending") // pending | in-progress | done
+  createdAt  DateTime  @default(now())
 }
 
 model Asset {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int?
-  employee    Employee? @relation(fields: [employeeId], references: [id])
-  tag         String    @unique
-  name        String
-  category    String    @default("hardware") // hardware | access-card | phone | other
-  status      String    @default("available") // available | issued | returned | retired
-  issuedDate  DateTime?
+  id           Int       @id @default(autoincrement())
+  employeeId   Int?
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+  tag          String    @unique
+  name         String
+  category     String    @default("hardware") // hardware | access-card | phone | other
+  status       String    @default("available") // available | issued | returned | retired
+  issuedDate   DateTime?
   returnedDate DateTime?
 }
 
@@ -355,40 +511,40 @@ model Asset {
 // ---------------------------------------------------------------------------
 
 model Requisition {
-  id          Int         @id @default(autoincrement())
-  title       String
-  department  String
-  headcount   Int         @default(1)
-  status      String      @default("draft") // draft | approved | posted | closed
+  id            Int         @id @default(autoincrement())
+  title         String
+  department    String
+  headcount     Int         @default(1)
+  status        String      @default("draft") // draft | approved | posted | closed
   justification String?
-  approverId  Int?
-  createdAt   DateTime    @default(now())
-  candidates  Candidate[]
+  approverId    Int?
+  createdAt     DateTime    @default(now())
+  candidates    Candidate[]
 }
 
 model Candidate {
-  id            Int         @id @default(autoincrement())
+  id            Int          @id @default(autoincrement())
   requisitionId Int?
   requisition   Requisition? @relation(fields: [requisitionId], references: [id])
   name          String
   email         String
   phone         String?
-  source        String?     // referral | jobboard | agency | direct
-  stage         String      @default("applied") // applied | screening | interview | offer | hired | rejected
-  createdAt     DateTime    @default(now())
+  source        String? // referral | jobboard | agency | direct
+  stage         String       @default("applied") // applied | screening | interview | offer | hired | rejected
+  createdAt     DateTime     @default(now())
   interviews    Interview[]
 }
 
 model Interview {
-  id           Int       @id @default(autoincrement())
-  candidateId  Int
-  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  round        Int       @default(1)
-  scheduledAt  DateTime?
-  interviewer  String?
-  score        Int?      // 1..5
-  feedback     String?
-  status       String    @default("scheduled") // scheduled | completed | cancelled
+  id          Int       @id @default(autoincrement())
+  candidateId Int
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  round       Int       @default(1)
+  scheduledAt DateTime?
+  interviewer String?
+  score       Int? // 1..5
+  feedback    String?
+  status      String    @default("scheduled") // scheduled | completed | cancelled
 }
 
 // ---------------------------------------------------------------------------
@@ -407,14 +563,14 @@ model TrainingRecord {
 }
 
 model Certification {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  name        String
-  authority   String?   // e.g. SFA
-  issuedDate  DateTime?
-  expiryDate  DateTime?
-  mandatory   Boolean   @default(false)
+  id         Int       @id @default(autoincrement())
+  employeeId Int
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  name       String
+  authority  String? // e.g. SFA
+  issuedDate DateTime?
+  expiryDate DateTime?
+  mandatory  Boolean   @default(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -422,36 +578,36 @@ model Certification {
 // ---------------------------------------------------------------------------
 
 model Shift {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date        DateTime
-  startTime   String    // "09:00"
-  endTime     String    // "18:00"
-  location    String?
-  createdAt   DateTime  @default(now())
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime
+  startTime  String // "09:00"
+  endTime    String // "18:00"
+  location   String?
+  createdAt  DateTime @default(now())
 }
 
 model AttendanceRecord {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date        DateTime
-  clockIn     DateTime?
-  clockOut    DateTime?
-  scheduledHours Float  @default(8)
-  workedHours    Float  @default(0)
-  overtimeHours  Float  @default(0)
+  id             Int       @id @default(autoincrement())
+  employeeId     Int
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime
+  clockIn        DateTime?
+  clockOut       DateTime?
+  scheduledHours Float     @default(8)
+  workedHours    Float     @default(0)
+  overtimeHours  Float     @default(0)
 }
 
 model OvertimeRequest {
-  id          Int       @id @default(autoincrement())
-  employeeId  Int
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date        DateTime
-  hours       Float
-  reason      String?
-  status      String    @default("pending") // pending | approved | rejected
-  approverId  Int?
-  createdAt   DateTime  @default(now())
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime
+  hours      Float
+  reason     String?
+  status     String   @default("pending") // pending | approved | rejected
+  approverId Int?
+  createdAt  DateTime @default(now())
 }

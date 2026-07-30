@@ -43,12 +43,10 @@ export default function Login() {
       {/* Brand panel */}
       <div className="relative hidden flex-col justify-between bg-ink p-12 text-white lg:flex">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white">
-            <svg viewBox="0 0 24 24" className="h-6 w-6" aria-label="Singapore Red Cross">
-              <path fill="#ED1B2E" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" />
-            </svg>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal font-display text-lg font-bold">
+            M
           </div>
-          <span className="font-display text-lg font-semibold">Singapore Red Cross</span>
+          <span className="font-display text-lg font-semibold">Meridian HR</span>
         </div>
         <div className="max-w-md">
           <h1 className="font-display text-4xl font-semibold leading-tight">
@@ -74,11 +72,8 @@ export default function Login() {
       {/* Form panel */}
       <div className="flex items-center justify-center bg-canvas p-6">
         <div className="w-full max-w-sm">
-          <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <svg viewBox="0 0 24 24" className="h-6 w-6" aria-label="Singapore Red Cross">
-              <path fill="#ED1B2E" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" />
-            </svg>
-            <span className="font-display text-xl font-semibold text-ink">Singapore Red Cross</span>
+          <div className="mb-8 lg:hidden">
+            <span className="font-display text-xl font-semibold text-ink">Meridian HR</span>
           </div>
           <h2 className="text-2xl font-semibold text-ink">Sign in</h2>
           <p className="mt-1 text-sm text-ink-muted">Access your HR workspace.</p>

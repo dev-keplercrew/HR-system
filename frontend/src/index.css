@@ -6,6 +6,16 @@
   :root {
     color-scheme: light;
   }
+  /* Grid's automatic minimum size reads the GRID ITEM's own min-width, not a
+     descendant's. Our grid items are the col-span wrappers, so without this a wide
+     table sizes its column track to min-content and pushes the whole page past the
+     viewport instead of scrolling inside its card's overflow-x-auto container.
+     Lives in @layer base, not components: Tailwind tree-shakes component-layer
+     rules by class name, and an attribute selector never matches, so it was
+     silently dropped from the bundle when declared there. */
+  [class*="col-span-"] {
+    min-width: 0;
+  }
   html,
   body,
   #root {
@@ -47,14 +57,6 @@
   }
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
-  }
-
-  /* Grid's automatic minimum size reads the GRID ITEM's own min-width, not a
-     descendant's. Our grid items are the col-span wrappers, so without this a wide
-     table sizes its column track to min-content and pushes the whole page past the
-     viewport instead of scrolling inside its card's overflow-x-auto container. */
-  [class*="col-span-"] {
-    min-width: 0;
   }
 
   /* --- Cards --- */

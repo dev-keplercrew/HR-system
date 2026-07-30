@@ -162,7 +162,7 @@ export function DataTable<T extends Record<string, any>>({
 }) {
   if (!data.length) return <EmptyState message={empty} />;
   return (
-    <div className="overflow-x-auto">
+    <div className="min-w-0 overflow-x-auto">
       <table className="table">
         <thead>
           <tr>

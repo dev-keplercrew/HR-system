@@ -50,8 +50,11 @@
   }
 
   /* --- Cards --- */
+  /* min-w-0 matters: cards are grid/flex items, and a grid/flex item defaults to
+     min-width:auto, so a wide table inside would widen its track and push the whole
+     page past the viewport instead of scrolling within its own overflow container. */
   .card {
-    @apply rounded-xl border border-line bg-surface shadow-card;
+    @apply min-w-0 rounded-xl border border-line bg-surface shadow-card;
   }
   .card-pad {
     @apply card p-5;

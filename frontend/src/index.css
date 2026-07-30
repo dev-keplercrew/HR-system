@@ -10,9 +10,8 @@
      descendant's. Our grid items are the col-span wrappers, so without this a wide
      table sizes its column track to min-content and pushes the whole page past the
      viewport instead of scrolling inside its card's overflow-x-auto container.
-     Lives in @layer base, not components: Tailwind tree-shakes component-layer
-     rules by class name, and an attribute selector never matches, so it was
-     silently dropped from the bundle when declared there. */
+     Targets the col-span wrappers directly rather than .card, which sits one level
+     too deep to influence the track. */
   [class*="col-span-"] {
     min-width: 0;
   }

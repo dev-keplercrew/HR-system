@@ -10,6 +10,7 @@ import { authenticate, type AuthRequest } from "../middleware/auth.js";
 import { requireHR, requireManager } from "../middleware/rbac.js";
 import { ah, intParam } from "../http.js";
 import { audit } from "../services/audit.js";
+import { buildIr21 } from "../services/irasExport.js";
 
 const router = Router();
 router.use(authenticate);
@@ -224,6 +225,41 @@ router.patch(
     });
     await audit(req.auth, "update", "OffboardingTask", id, `status=${status}`);
     res.json(updated);
+  })
+);
+
+// POST /offboarding/:employeeId/ir21 — generate an IRAS IR21 tax-clearance record
+// for a departing FOREIGN employee (item 4). Wired to the offboarding flow as an
+// action, discoverable from the Offboarding page. HR-only.
+router.post(
+  "/offboarding/:employeeId/ir21",
+  requireHR,
+  ah(async (req: AuthRequest, res) => {
+    const employeeId = intParam(req.params.employeeId, "employeeId");
+    const emp = await ensureEmployee(employeeId);
+    const clearanceDate = req.body?.clearanceDate ? new Date(String(req.body.clearanceDate)) : new Date();
+    if (Number.isNaN(clearanceDate.getTime())) {
+      throw badRequest(`clearanceDate '${req.body.clearanceDate}' is not a valid date`);
+    }
+    const ir21 = buildIr21(
+      {
+        employeeNo: emp.employeeNo,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        nric: emp.nric,
+        nationality: emp.nationality,
+        dateOfBirth: emp.dateOfBirth,
+        workPassType: emp.workPassType,
+      },
+      clearanceDate
+    );
+    if (!ir21.applicable) {
+      throw badRequest(
+        `IR21 tax clearance applies only to departing foreign employees (EP/SP/WP). ${emp.employeeNo} has workPassType '${emp.workPassType ?? "none"}'.`
+      );
+    }
+    await audit(req.auth, "lifecycle.ir21", "Employee", employeeId, `Generated IR21 tax clearance`);
+    res.status(201).json(ir21);
   })
 );
 

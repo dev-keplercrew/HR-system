@@ -33,6 +33,7 @@ const NAV: NavGroup[] = [
     title: "Payroll",
     items: [
       { to: "/payroll", label: "Payroll Runs", roles: ["admin", "hr"] },
+      { to: "/payroll/reconciliation", label: "Reconciliation", roles: ["admin", "hr"] },
       { to: "/payslips", label: "Payslips" },
     ],
   },
@@ -118,13 +119,11 @@ export default function Layout() {
         }`}
       >
         <div className="flex h-16 items-center gap-2 border-b border-white/10 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-label="Singapore Red Cross">
-              <path fill="#ED1B2E" d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" />
-            </svg>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal font-display text-sm font-bold">
+            M
           </div>
           <div className="leading-tight">
-            <p className="font-display text-sm font-semibold">Singapore Red Cross</p>
+            <p className="font-display text-sm font-semibold">Meridian HR</p>
             <p className="text-[11px] text-white/50">People Operations</p>
           </div>
         </div>

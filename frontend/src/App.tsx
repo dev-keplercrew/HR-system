@@ -12,6 +12,7 @@ import EmployeeDirectory from "./pages/EmployeeDirectory";
 import EmployeeProfile from "./pages/EmployeeProfile";
 import Payroll from "./pages/Payroll";
 import Payslips from "./pages/Payslips";
+import PayrollReconciliation from "./pages/PayrollReconciliation";
 import LeaveApplication from "./pages/LeaveApplication";
 import LeaveApproval from "./pages/LeaveApproval";
 import ClaimsSubmission from "./pages/ClaimsSubmission";
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="employees/:id" element={<EmployeeProfile />} />
 
         <Route path="payroll" element={<ProtectedRoute roles={HR}><Payroll /></ProtectedRoute>} />
+        <Route path="payroll/reconciliation" element={<ProtectedRoute roles={HR}><PayrollReconciliation /></ProtectedRoute>} />
         <Route path="payslips" element={<Payslips />} />
 
         <Route path="leave/apply" element={<LeaveApplication />} />

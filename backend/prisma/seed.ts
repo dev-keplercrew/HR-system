@@ -3,7 +3,8 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/prisma.js";
-import { buildPayslip } from "../src/services/payrollCalc.js";
+import { buildPayslip, DEFAULT_CPF_RATE_BANDS, allowanceBreakdown } from "../src/services/payrollCalc.js";
+import { computeSdl, selfHelpFundFromBands, type SelfHelpBand } from "../src/services/statutoryLevies.js";
 import { regenerateAlerts } from "../src/services/alerts.js";
 
 const PASSWORD = "password123";
@@ -18,7 +19,19 @@ function yearsAgo(y: number): Date {
 }
 
 async function wipe() {
-  // Delete in FK-safe order.
+  // Delete in FK-safe order (children before parents).
+  // --- SG payroll gap-list models (new) ---
+  await prisma.bankStatementLine.deleteMany();
+  await prisma.bankStatement.deleteMany();
+  await prisma.payslipAdjustment.deleteMany();
+  await prisma.ytdCpfWage.deleteMany();
+  await prisma.selfHelpFundRate.deleteMany();
+  await prisma.fwlRateConfig.deleteMany();
+  await prisma.bankFormatConfig.deleteMany();
+  await prisma.cpfRateBand.deleteMany();
+  await prisma.allowanceComponent.deleteMany();
+  await prisma.statutoryConfig.deleteMany();
+  // --- existing models ---
   await prisma.auditLog.deleteMany();
   await prisma.alert.deleteMany();
   await prisma.overtimeRequest.deleteMany();
@@ -104,6 +117,14 @@ async function main() {
     { employeeNo: "M012", firstName: "Rajesh", lastName: "Kumar", email: "rajesh.kumar@meridian.sg", dept: "OPS", jobTitle: "Warehouse Supervisor", payrollGroup: "hourly", basicSalary: 3200, workPassType: "wp", status: "probation", dob: new Date("1990-08-08"), joinYearsAgo: 0, probationEndDate: daysFromNow(40), workPassExpiry: daysFromNow(60), managerNo: "M008" },
   ];
 
+  // Self-help fund group per employee (mix of CDAC/MBMF/SINDA/ECF and opt-out=null).
+  // Foreign work-pass holders default to null (they do not contribute to SHG funds).
+  const ethnicGroupByNo: Record<string, string | null> = {
+    M001: "MBMF", M002: "SINDA", M003: "CDAC", M004: "CDAC", M005: "CDAC",
+    M006: null, M007: null, M008: "MBMF", M009: "ECF", M010: null,
+    M011: "MBMF", M012: null,
+  };
+
   const empByNo: Record<string, any> = {};
   // First pass: create employees (+ users) without manager links.
   for (const s of specs) {
@@ -126,6 +147,7 @@ async function main() {
         maritalStatus: s.joinYearsAgo > 4 ? "married" : "single",
         nationality: s.workPassType === "citizen" || s.workPassType === "pr" ? "Singaporean" : "Foreigner",
         nric: s.workPassType === "citizen" ? "S****" + (100 + Math.floor(Math.random() * 899)) + "A" : null,
+        ethnicGroup: ethnicGroupByNo[s.employeeNo] ?? null,
         address: `${10 + Math.floor(Math.random() * 90)} Meridian Ave, #0${1 + Math.floor(Math.random() * 8)}-${10 + Math.floor(Math.random() * 89)}, Singapore`,
         jobTitle: s.jobTitle,
         employmentType: s.workPassType === "wp" ? "contract" : "full-time",
@@ -223,23 +245,133 @@ async function main() {
     data: { employeeId: empByNo["M004"].id, claimTypeId: claimTypes[3].id, amount: 32, description: "Client visit taxi", status: "paid", approverId: empByNo["M003"].id, decidedAt: daysFromNow(-10) },
   });
 
+  // --- Statutory config (admin-editable rates/ceilings — the single source of
+  // truth for the business logic; a 2026 rate revision is a data change here) ---
+  const statutoryConfig = await prisma.statutoryConfig.create({ data: {} }); // all fields use their documented defaults
+  // CPF age-band rate table — seeded from the same DEFAULT_CPF_RATE_BANDS the
+  // engine falls back to, so a 2026 revision only ever needs to happen here.
+  for (const [i, band] of DEFAULT_CPF_RATE_BANDS.entries()) {
+    await prisma.cpfRateBand.create({
+      data: { ageUpper: band.ageUpper, employeeRate: band.employee, employerRate: band.employer, label: band.label, sortOrder: i },
+    });
+  }
+  const shfBandSeed: Omit<SelfHelpBand, never>[] = [
+    // CDAC (Chinese Development Assistance Council) — representative 2025 bands.
+    { ethnicGroup: "CDAC", wageLower: 0, wageUpper: 2000, amount: 0.5 },
+    { ethnicGroup: "CDAC", wageLower: 2000.01, wageUpper: 3500, amount: 1.5 },
+    { ethnicGroup: "CDAC", wageLower: 3500.01, wageUpper: 5000, amount: 3.5 },
+    { ethnicGroup: "CDAC", wageLower: 5000.01, wageUpper: 7500, amount: 12 },
+    { ethnicGroup: "CDAC", wageLower: 7500.01, wageUpper: 0, amount: 20 },
+    // MBMF (Mosque Building & Mendaki Fund).
+    { ethnicGroup: "MBMF", wageLower: 0, wageUpper: 1000, amount: 3 },
+    { ethnicGroup: "MBMF", wageLower: 1000.01, wageUpper: 2000, amount: 4.5 },
+    { ethnicGroup: "MBMF", wageLower: 2000.01, wageUpper: 3000, amount: 6.5 },
+    { ethnicGroup: "MBMF", wageLower: 3000.01, wageUpper: 5000, amount: 15 },
+    { ethnicGroup: "MBMF", wageLower: 5000.01, wageUpper: 0, amount: 26 },
+    // SINDA (Singapore Indian Development Association).
+    { ethnicGroup: "SINDA", wageLower: 0, wageUpper: 1000, amount: 1 },
+    { ethnicGroup: "SINDA", wageLower: 1000.01, wageUpper: 1500, amount: 3 },
+    { ethnicGroup: "SINDA", wageLower: 1500.01, wageUpper: 2500, amount: 5 },
+    { ethnicGroup: "SINDA", wageLower: 2500.01, wageUpper: 4500, amount: 7 },
+    { ethnicGroup: "SINDA", wageLower: 4500.01, wageUpper: 7500, amount: 12 },
+    { ethnicGroup: "SINDA", wageLower: 7500.01, wageUpper: 0, amount: 30 },
+    // ECF (Eurasian Community Fund).
+    { ethnicGroup: "ECF", wageLower: 0, wageUpper: 1000, amount: 2 },
+    { ethnicGroup: "ECF", wageLower: 1000.01, wageUpper: 2500, amount: 4 },
+    { ethnicGroup: "ECF", wageLower: 2500.01, wageUpper: 5000, amount: 9 },
+    { ethnicGroup: "ECF", wageLower: 5000.01, wageUpper: 0, amount: 20 },
+  ];
+  // Itemised allowance lines (item 3 — MOM "allowances (itemised)" requirement).
+  // Percentages sum to 0.10 so total allowances match the prior flat-10% figure;
+  // an admin can freely re-split or add/remove named components later.
+  const allowanceComponentSeed = [
+    { label: "Transport", percentageOfBasic: 0.06, sortOrder: 0 },
+    { label: "Meal", percentageOfBasic: 0.04, sortOrder: 1 },
+  ];
+  for (const a of allowanceComponentSeed) await prisma.allowanceComponent.create({ data: a });
+  for (const b of shfBandSeed) await prisma.selfHelpFundRate.create({ data: b });
+  for (const f of [
+    { workPassType: "sp", tier: "basic", monthlyRate: 450 },
+    { workPassType: "sp", tier: "higher", monthlyRate: 650 },
+    { workPassType: "wp", tier: "basic", monthlyRate: 700 },
+    { workPassType: "wp", tier: "higher", monthlyRate: 950 },
+  ]) {
+    await prisma.fwlRateConfig.create({ data: f });
+  }
+  for (const bf of [
+    { bankKey: "generic", label: "Generic GIRO (H/D/T CSV)", isDefault: true },
+    { bankKey: "dbs", label: "DBS IDEAL", isDefault: false },
+    { bankKey: "ocbc", label: "OCBC Velocity", isDefault: false },
+    { bankKey: "uob", label: "UOB (fixed-width GIRO)", isDefault: false },
+  ]) {
+    await prisma.bankFormatConfig.create({ data: bf });
+  }
+  const shfBands = await prisma.selfHelpFundRate.findMany();
+  const allowanceComponents = await prisma.allowanceComponent.findMany({ orderBy: { sortOrder: "asc" } });
+
   // --- A finalised payroll run for the current period (executive group) ---
   const period = `${year}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-  const run = await prisma.payrollRun.create({ data: { period, payrollGroup: "executive", status: "finalised" } });
+  const now = new Date();
+  const run = await prisma.payrollRun.create({
+    data: {
+      period,
+      payrollGroup: "executive",
+      status: "finalised",
+      bankFormat: "generic",
+      dedupeKey: `${period}|executive`,
+      reviewedAt: now,
+      approvedAt: now,
+      finalisedAt: now,
+    },
+  });
   let gGross = 0, gNet = 0, gCpf = 0;
   for (const emp of allEmps.filter((e) => e.payrollGroup === "executive")) {
-    const allowances = Math.round(emp.basicSalary * 0.1);
-    const fig = buildPayslip({ basicSalary: emp.basicSalary, allowances, dateOfBirth: emp.dateOfBirth, workPassType: emp.workPassType });
-    gGross += fig.grossPay; gNet += fig.netPay; gCpf += fig.totalCpf;
+    const allowanceCalc = allowanceBreakdown(emp.basicSalary, allowanceComponents);
+    const fig = buildPayslip({ basicSalary: emp.basicSalary, allowances: allowanceCalc.total, dateOfBirth: emp.dateOfBirth, workPassType: emp.workPassType });
+    const sdlAmount = computeSdl(fig.grossPay);
+    const shfAmount = selfHelpFundFromBands(emp.ethnicGroup, fig.grossPay, shfBands);
+    const shfJson = shfAmount > 0 && emp.ethnicGroup ? JSON.stringify({ [emp.ethnicGroup]: shfAmount }) : null;
+    const net = fig.netPay - shfAmount; // employee CPF + self-help fund reduce net; SDL is employer-side
+    // Reads the same seeded StatutoryConfig.cpfOwCeiling the engine uses, so this
+    // can't silently diverge if an admin edits the ceiling and re-seeds.
+    const owSubjectToCpf = Math.min(fig.ordinaryWage, statutoryConfig.cpfOwCeiling);
+    gGross += fig.grossPay; gNet += net; gCpf += fig.totalCpf;
     await prisma.payslip.create({
       data: {
         payrollRunId: run.id, employeeId: emp.id,
-        basicPay: fig.basicPay, allowances: fig.allowances, grossPay: fig.grossPay,
-        employeeCpf: fig.employeeCpf, employerCpf: fig.employerCpf, netPay: fig.netPay,
+        basicPay: fig.basicPay, allowances: fig.allowances, allowanceBreakdown: JSON.stringify(allowanceCalc.lines), grossPay: fig.grossPay,
+        employeeCpf: fig.employeeCpf, employerCpf: fig.employerCpf, netPay: net,
+        ordinaryWage: fig.ordinaryWage, additionalWage: fig.additionalWage, owSubjectToCpf,
+        owCpf: fig.owCpf, awCpf: fig.awCpf, cpfAgeBandLabel: fig.cpfAgeBandLabel,
+        sdlAmount, selfHelpFundDeductions: shfJson,
       },
+    });
+    // Track YTD OW subject to CPF for the AW-ceiling calculation on later runs.
+    await prisma.ytdCpfWage.upsert({
+      where: { employeeId_year: { employeeId: emp.id, year } },
+      create: { employeeId: emp.id, year, totalOwSubjectToCpf: owSubjectToCpf },
+      update: { totalOwSubjectToCpf: { increment: owSubjectToCpf } },
     });
   }
   await prisma.payrollRun.update({ where: { id: run.id }, data: { totalGross: gGross, totalNet: gNet, totalCpf: gCpf } });
+
+  // --- Bank statement reconciliation demo: one matched, one amount-mismatch,
+  // one unmatched line against the run's payslips ---
+  const runPayslips = await prisma.payslip.findMany({ where: { payrollRunId: run.id }, include: { employee: true } });
+  if (runPayslips.length >= 2) {
+    const p0 = runPayslips[0];
+    const p1 = runPayslips[1];
+    const stmt = await prisma.bankStatement.create({
+      data: { payrollRunId: run.id, filename: `demo-bank-statement-${period}.csv` },
+    });
+    await prisma.bankStatementLine.createMany({
+      data: [
+        { bankStatementId: stmt.id, rawLine: `${p0.employee.employeeNo},${p0.employee.firstName} ${p0.employee.lastName},${p0.netPay.toFixed(2)}`, amount: p0.netPay, reference: p0.employee.employeeNo, matchedEmployeeId: p0.employeeId, matchedAmount: p0.netPay, status: "matched" },
+        { bankStatementId: stmt.id, rawLine: `${p1.employee.employeeNo},${p1.employee.firstName} ${p1.employee.lastName},${(p1.netPay - 10).toFixed(2)}`, amount: p1.netPay - 10, reference: p1.employee.employeeNo, matchedEmployeeId: p1.employeeId, matchedAmount: p1.netPay, status: "amount-mismatch" },
+        { bankStatementId: stmt.id, rawLine: `X999,Unknown Payee,1234.00`, amount: 1234, reference: "X999", status: "unmatched" },
+      ],
+    });
+  }
 
   // --- Certifications (some expiring → drives alerts) + training ---
   await prisma.certification.create({ data: { employeeId: empByNo["M010"].id, name: "AWS Solutions Architect", authority: "AWS", issuedDate: yearsAgo(3), expiryDate: daysFromNow(20), mandatory: true } });

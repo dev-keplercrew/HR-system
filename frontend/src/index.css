@@ -49,10 +49,16 @@
     @apply px-3 py-1.5 text-xs;
   }
 
+  /* Grid's automatic minimum size reads the GRID ITEM's own min-width, not a
+     descendant's. Our grid items are the col-span wrappers, so without this a wide
+     table sizes its column track to min-content and pushes the whole page past the
+     viewport instead of scrolling inside its card's overflow-x-auto container. */
+  [class*="col-span-"] {
+    min-width: 0;
+  }
+
   /* --- Cards --- */
-  /* min-w-0 matters: cards are grid/flex items, and a grid/flex item defaults to
-     min-width:auto, so a wide table inside would widen its track and push the whole
-     page past the viewport instead of scrolling within its own overflow container. */
+  /* Same reason, for the cards that sit directly in a grid/flex container. */
   .card {
     @apply min-w-0 rounded-xl border border-line bg-surface shadow-card;
   }
